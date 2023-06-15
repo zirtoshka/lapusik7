@@ -3,10 +3,12 @@ package utilities;
 import IO.ConsoleManager;
 import IO.ScannerManager;
 import data.User;
+import exceptions.IncorrectScriptException;
 
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 
 public class AuthorizationManager {
@@ -17,6 +19,7 @@ public class AuthorizationManager {
     }
 
     public User run() {
+        while (true){
         try {
             if (askSign()) {
                 ConsoleManager.printInfoCyan("Hello, new user!");
@@ -48,22 +51,30 @@ public class AuthorizationManager {
                 return new User(login, password, false);
             }
         } catch (NoSuchAlgorithmException e) {
-            ConsoleManager.printError("Authorization declined( beee");
-        }
-        return null;
+            ConsoleManager.printError("Authorization declined( beee, try again");
+        } catch (NoSuchElementException e) {
+            e.printStackTrace();
+            ConsoleManager.printError("Name is ctrl+D. ok, bye");
+            System.exit(0);
+        }}
     }
 
     public boolean askSign() {
-        while (true) {
-            ConsoleManager.printInfoCyan("If you want to sign up, enter 'up'");
-            ConsoleManager.printInfoCyan("If you want to sign in, enter 'in'");
-            String answer = scanner.nextLine().toLowerCase().trim();
-            if (answer.equals("up")) {
-                return true;
-            } else if (answer.equals("in")) {
-                return false;
+        try {
+            while (true) {
+                ConsoleManager.printInfoCyan("If you want to sign up, enter 'up'");
+                ConsoleManager.printInfoCyan("If you want to sign in, enter 'in'");
+                String answer = scanner.nextLine().toLowerCase().trim();
+                if (answer.equals("up")) {
+                    return true;
+                } else if (answer.equals("in")) {
+                    return false;
+                }
+                ConsoleManager.printError("What do you want??? I don't understand((");
             }
-            ConsoleManager.printError("What do you want??? I don't understand((");
+        } catch (NoSuchElementException e) {
+            ConsoleManager.printError("Name is ctrl+D. ok, bye");
+            System.exit(0);
         }
-    }
-}
+        return false;
+    }}

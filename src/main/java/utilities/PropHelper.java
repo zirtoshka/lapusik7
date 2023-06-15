@@ -20,11 +20,7 @@ public class PropHelper {
         try {
             String os = System.getProperty("os.name").toLowerCase();
             Scanner scanner = null;
-            if (os.contains("win")) {
-                scanner = scan(System.getProperty("user.dir") + "\\" + "src/database.properties");
-            } else {
-                scanner = scan(System.getProperty("user.dir") + "/" + "src/database.properties");
-            }
+            scanner=scan( System.getenv("PWD")+"/"+"database.properties");
             fillFields(scanner);
         }catch (Exception e){
             e.printStackTrace();

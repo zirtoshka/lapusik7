@@ -37,7 +37,7 @@ public class App {
                     throw new LogOutException();
                 }
             } catch (Disconnect | UnresolvedAddressException | IOException e) {
-                ConsoleManager.printError(e.getMessage());
+                sign=true;
             } catch (LogOutException e) {
                 sign = true;
             }

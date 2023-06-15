@@ -12,6 +12,8 @@ import java.io.FileNotFoundException;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 import static data.Semester.DEFAULT_SEMESTER;
@@ -27,6 +29,7 @@ public class CollectionManager {
     private final String emptyCollection = "Collection is empty";
 
     private static LocalDateTime lastInitTime;
+    private ReadWriteLock lock = new ReentrantReadWriteLock();
 
 
     public CollectionManager(DataBaseCollectionManager dataBaseCollectionManager) {
@@ -48,76 +51,111 @@ public class CollectionManager {
     }
 
     public String addToCollection(StudyGroup studyGroupFromUser) {
-        if (studyGroupFromUser.getId().equals(wrongId) || idSet.add(studyGroupFromUser.getId())) {
-            studyGroupFromUser.setId(generateId());
-        }
+        lock.writeLock().lock();
         try {
-            studyGroupCollection.add(dataBaseCollectionManager.insertStudyGroup(studyGroupFromUser));
-            lastInitTime = LocalDateTime.now();
-            return "StudyGroup added successfully";
-        } catch (DatabaseHandlingException e) {
-            return "Failed to add the group";
+            if (studyGroupFromUser.getId().equals(wrongId) || idSet.add(studyGroupFromUser.getId())) {
+                studyGroupFromUser.setId(generateId());
+            }
+            try {
+                studyGroupCollection.add(dataBaseCollectionManager.insertStudyGroup(studyGroupFromUser));
+                lastInitTime = LocalDateTime.now();
+                return "StudyGroup added successfully";
+            } catch (DatabaseHandlingException e) {
+                return "Failed to add the group";
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
     public String updateById(StudyGroup studyGroup) {
+        lock.writeLock().lock();
         try {
-            dataBaseCollectionManager.removeStudyGroupById(studyGroup.getId());
-            studyGroupCollection.add(dataBaseCollectionManager.insertStudyGroup(studyGroup));
-            lastInitTime = LocalDateTime.now();
-            return "StudyGroup updated successfully";
-        } catch (DatabaseHandlingException e) {
-            return "Failed to update the group";
+            try {
+                dataBaseCollectionManager.removeStudyGroupById(studyGroup.getId());
+                studyGroupCollection.add(dataBaseCollectionManager.insertStudyGroup(studyGroup));
+                lastInitTime = LocalDateTime.now();
+                return "StudyGroup updated successfully";
+            } catch (DatabaseHandlingException e) {
+                return "Failed to update the group";
 
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
     public String addToCollectionIfMax(StudyGroup studyGroupFromUser) {
-        if (studyGroupFromUser.getStudentsCount() > getMaxNumberInGroup()) {
-            return addToCollection(studyGroupFromUser);
+        lock.writeLock().lock();
+        try {
+            if (studyGroupFromUser.getStudentsCount() > getMaxNumberInGroup()) {
+                return addToCollection(studyGroupFromUser);
+            }
+            return "The StudyGroup is less than maximum.";
+        } finally {
+            lock.writeLock().unlock();
         }
-        return "The StudyGroup is less than maximum.";
     }
 
     public String printFieldDescendingSemester() {
-        return studyGroupCollection.stream()
-                .map(StudyGroup::getSemesterEnum)
-                .distinct()
-                .filter(type -> !type.equals(DEFAULT_SEMESTER))
-                .sorted(Comparator.naturalOrder())
-                .map(Enum::name)
-                .collect(Collectors.joining("\n"));
+        lock.readLock().lock();
+        try {
+            return studyGroupCollection.stream()
+                    .map(StudyGroup::getSemesterEnum)
+                    .distinct()
+                    .filter(type -> !type.equals(DEFAULT_SEMESTER))
+                    .sorted(Comparator.naturalOrder())
+                    .map(Enum::name)
+                    .collect(Collectors.joining("\n"));
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public String printUniqueAdmin() {
-        Set<String> uniqueAdminNames = getStudyGroupCollection().stream()
-                .map(StudyGroup::getGroupAdmin)
-                .filter(Objects::nonNull)
-                .collect(Collectors.groupingBy(Person::getName, Collectors.counting()))
-                .entrySet().stream()
-                .filter(entry -> entry.getValue() == 1)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toSet());
-        return uniqueAdminNames.toString();
+        lock.readLock().lock();
+        try {
+            Set<String> uniqueAdminNames = getStudyGroupCollection().stream()
+                    .map(StudyGroup::getGroupAdmin)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.groupingBy(Person::getName, Collectors.counting()))
+                    .entrySet().stream()
+                    .filter(entry -> entry.getValue() == 1)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toSet());
+            return uniqueAdminNames.toString();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
 
     public String collectionType() {
+        lock.readLock().lock();
         try {
-            if (studyGroupCollection.isEmpty()) throw new NullCollectionException();
-            return studyGroupCollection.getClass().getName();
-        } catch (NullCollectionException | NullPointerException e) {
-            ConsoleManager.printError(emptyCollection);
+            try {
+                if (studyGroupCollection.isEmpty()) throw new NullCollectionException();
+                return studyGroupCollection.getClass().getName();
+            } catch (NullCollectionException | NullPointerException e) {
+                ConsoleManager.printError(emptyCollection);
+            }
+            return emptyCollection;
+        } finally {
+            lock.readLock().unlock();
         }
-        return emptyCollection;
     }
 
     public int collectionSize() {
+        lock.readLock().lock();
         try {
-            if (studyGroupCollection == null) throw new NullCollectionException();
-            return studyGroupCollection.size();
-        } catch (NullCollectionException e) {
-            return SIZE_EMPTY;
+            try {
+                if (studyGroupCollection == null) throw new NullCollectionException();
+                return studyGroupCollection.size();
+            } catch (NullCollectionException e) {
+                return SIZE_EMPTY;
+            }
+        } finally {
+            lock.readLock().unlock();
         }
 
     }
@@ -128,35 +166,52 @@ public class CollectionManager {
     }
 
     public void updateIdSet(Integer groupId) {
-        idSet.add(groupId);
+        lock.writeLock().lock();
+        try {
+            idSet.add(groupId);
+        } finally {
+            lock.writeLock().unlock();
+        }
+
     }
 
     public String printInfo() {
-        return "Collection info:\n" +
-                " Type: " + collectionType() +
-                "\n Quantity: " + collectionSize() +
-                "\n Last enter: " + lastInitTime;
+        lock.readLock().lock();
+        try {
+            return "Collection info:\n" +
+                    " Type: " + collectionType() +
+                    "\n Quantity: " + collectionSize() +
+                    "\n Last enter: " + lastInitTime;
+        } finally {
+            lock.readLock().unlock();
+        }
+
     }
 
     public String clearCollection(User user) {
-        ArrayDeque<StudyGroup> forRemove = new ArrayDeque<>();
+        lock.writeLock().lock();
         try {
-            studyGroupCollection.stream().filter((StudyGroup) -> StudyGroup.getOwner().getUsername().equals(user.getUsername())).forEach(forRemove::add);
-            studyGroupCollection.removeAll(forRemove);
-            forRemove.forEach((StudyGroup) -> {
-                try {
-                    dataBaseCollectionManager.removeStudyGroupById(StudyGroup.getId());
-                } catch (DatabaseHandlingException e) {
-                    throw new RuntimeException();
-                }
-            });
-        } catch (NullPointerException e) {
-            return "What do you want to clear? You didn't add any study groups";
-        } catch (RuntimeException e) {
-            return "Failed in clear command";
-        }
+            ArrayDeque<StudyGroup> forRemove = new ArrayDeque<>();
+            try {
+                studyGroupCollection.stream().filter((StudyGroup) -> StudyGroup.getOwner().getUsername().equals(user.getUsername())).forEach(forRemove::add);
+                studyGroupCollection.removeAll(forRemove);
+                forRemove.forEach((StudyGroup) -> {
+                    try {
+                        dataBaseCollectionManager.removeStudyGroupById(StudyGroup.getId());
+                    } catch (DatabaseHandlingException e) {
+                        throw new RuntimeException();
+                    }
+                });
+            } catch (NullPointerException e) {
+                return "What do you want to clear? You didn't add any study groups";
+            } catch (RuntimeException e) {
+                return "Failed in clear command";
+            }
 
-        return "Number of deleted elements: " + forRemove.size();
+            return "Number of deleted elements: " + forRemove.size();
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
 
@@ -180,44 +235,64 @@ public class CollectionManager {
     }
 
     public String headOfCollection() {
+        lock.readLock().lock();
         try {
-            if (studyGroupCollection.isEmpty()) throw new NullCollectionException();
-            return studyGroupCollection.getFirst().toString();
-        } catch (NullCollectionException e) {
-            ConsoleManager.printError(emptyCollection);
+            try {
+                if (studyGroupCollection.isEmpty()) throw new NullCollectionException();
+                return studyGroupCollection.getFirst().toString();
+            } catch (NullCollectionException e) {
+                ConsoleManager.printError(emptyCollection);
+            }
+            return emptyCollection;
+        } finally {
+            lock.readLock().unlock();
         }
-        return emptyCollection;
     }
 
     public StudyGroup getById(Integer id) {
-        return studyGroupCollection.stream()
-                .filter(studyGroup -> studyGroup.getId().equals(id))
-                .findFirst()
-                .orElse(null);
+        lock.readLock().lock();
+        try {
+            return studyGroupCollection.stream()
+                    .filter(studyGroup -> studyGroup.getId().equals(id))
+                    .findFirst()
+                    .orElse(null);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public void removeFromCollection(StudyGroup studyGroup) {
-        studyGroupCollection.remove(studyGroup);
+        lock.writeLock().lock();
+        try {
+            studyGroupCollection.remove(studyGroup);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public String removeById(Integer id, User user) {
+        lock.writeLock().lock();
         try {
-            if (findById(id) == null) throw new StudyGroupNullException();
-            if (findById(id).getOwner().getUsername().equals(user.getUsername())) {
-                try {
-                    studyGroupCollection.remove(studyGroupCollection.stream().filter((StudyGroup) -> Objects.equals(StudyGroup.getId(), id)).findFirst().get());
-                    dataBaseCollectionManager.removeStudyGroupById(id);
-                    sortCollection();
-                } catch (DatabaseHandlingException e) {
-                    return "An error occurred when deleting an element";
-                }
-            } else throw new OtherOwnerException();
-        } catch (StudyGroupNullException e) {
-            return "No Study Group with that ID";
-        } catch (OtherOwnerException e) {
-            return "It's not your group, so I can't delete it";
+            try {
+                if (findById(id) == null) throw new StudyGroupNullException();
+                if (findById(id).getOwner().getUsername().equals(user.getUsername())) {
+                    try {
+                        studyGroupCollection.remove(studyGroupCollection.stream().filter((StudyGroup) -> Objects.equals(StudyGroup.getId(), id)).findFirst().get());
+                        dataBaseCollectionManager.removeStudyGroupById(id);
+                        sortCollection();
+                    } catch (DatabaseHandlingException e) {
+                        return "An error occurred when deleting an element";
+                    }
+                } else throw new OtherOwnerException();
+            } catch (StudyGroupNullException e) {
+                return "No Study Group with that ID";
+            } catch (OtherOwnerException e) {
+                return "It's not your group, so I can't delete it";
+            }
+            return "The study group was removed";
+        } finally {
+            lock.writeLock().unlock();
         }
-        return "The study group was removed";
     }
 
     public void sortCollection() {
@@ -235,29 +310,43 @@ public class CollectionManager {
     }
 
     public StudyGroup findById(int id) {
+        lock.readLock().lock();
+        try {
         try {
             return studyGroupCollection.stream().filter((studyGroup) -> studyGroup.getId().equals(id)).findAny().get();
         } catch (NoSuchElementException e) {
             return null;
+        } } finally {
+            lock.readLock().unlock();
         }
+
     }
 
     public int getMaxNumberInGroup() {
-        return studyGroupCollection.stream()
-                .mapToInt(StudyGroup::getStudentsCount)
-                .max()
-                .orElse(-1);
+        lock.readLock().lock();
+        try {
+            return studyGroupCollection.stream()
+                    .mapToInt(StudyGroup::getStudentsCount)
+                    .max()
+                    .orElse(-1);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public String toString() {
-        if (studyGroupCollection.isEmpty()) {
-            return emptyCollection + "(((";
+        lock.readLock().lock();
+        try {
+            if (studyGroupCollection.isEmpty()) {
+                return emptyCollection + "(((";
+            }
+            return studyGroupCollection.stream()
+                    .map(StudyGroup::toString)
+                    .collect(Collectors.joining("\n\n"));
+        } finally {
+            lock.readLock().unlock();
         }
-        return studyGroupCollection.stream()
-                .map(StudyGroup::toString)
-                .collect(Collectors.joining("\n\n"));
     }
-
 
 }
